@@ -16,6 +16,8 @@ object Cart {
   case class AddItem(item: Item) extends Command
   case class RemoveItem(item: Item) extends Command
   case object GetState extends Command
+  case object CheckoutStart extends Command
+  case object CheckoutFail extends Command
 
   sealed trait Event
   case object Timeout extends Event
@@ -35,8 +37,7 @@ class Cart extends Actor with Timers {
   }
 
 
-  def empty: Receive = {
-    LoggingReceive {
+  def empty: Receive = LoggingReceive {
       case Cart.AddItem(item) =>
         println("Adding item " + item.name)
         items = item :: items
@@ -44,12 +45,10 @@ class Cart extends Actor with Timers {
       case GetState =>
         println("Currently items are: " + items)
     }
-  }
 
-  def nonEmpty: Receive = {
-    LoggingReceive {
+  def nonEmpty: Receive = LoggingReceive {
       case Timeout =>
-        items = List()
+        clearItems
         context become empty
       case Cart.AddItem(item) =>
         resetClock
@@ -64,15 +63,25 @@ class Cart extends Actor with Timers {
           timers.cancel(CartTimer)
           context become empty
         }
+      case Cart.CheckoutStart =>
+        // here probably communicate with checkout actor
+        context become inCheckout
       case GetState =>
         println("Currently items are: " + items)
     }
+
+  def inCheckout: Receive = LoggingReceive {
+    case Cart.CheckoutFail =>
+      clearItems
+      context become empty
   }
 
   private def resetClock = {
     timers.cancel(CartTimer)
     timers.startSingleTimer(CartTimer, Timeout, 10 seconds)
   }
+
+  private def clearItems = items = List()
 
 }
 
