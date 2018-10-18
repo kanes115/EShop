@@ -1,3 +1,4 @@
+import TimerAPI._
 import akka.actor.{Actor, ActorSystem, Props, Timers}
 import akka.event.LoggingReceive
 
@@ -13,13 +14,6 @@ object Checkout {
   case class SetPaymentMethod(paymentMethod: PaymentMethod) extends Command
   case object Pay extends Command
 
-  sealed trait Event
-
-  sealed trait Timer
-  case object CheckoutTimer extends Timer
-  case object PaymentTimer extends Timer
-  case object Timeout extends Event
-
   sealed trait DeliveryMethod
   case object Courier extends DeliveryMethod
   case object Post extends DeliveryMethod
@@ -29,19 +23,22 @@ object Checkout {
   case object Card extends PaymentMethod
   case object Cash extends PaymentMethod
   case object Cows extends PaymentMethod
+
+  case object CheckoutTimer extends Timer
+  case object PaymentTimer extends Timer
 }
 
 class Checkout extends Actor with Timers {
   import Checkout._
-  import scala.concurrent.duration._
 
   var deliveryMethod: Option[DeliveryMethod] = None
   var paymentMethod: Option[PaymentMethod] = None
+  implicit val timerScheduler = super.timers
 
   override def receive: Receive = LoggingReceive {
     case Init =>
       println("I am instantiated!")
-      resetClock(CheckoutTimer)
+      startTimer(CheckoutTimer)
       context become selectingDelivery
   }
 
@@ -57,7 +54,7 @@ class Checkout extends Actor with Timers {
     case SetPaymentMethod(method) =>
       setPaymentMethod(method)
       timers.cancel(CheckoutTimer)
-      resetClock(PaymentTimer)
+      startTimer(PaymentTimer)
       context become processingPayment
     case Timeout => cancel
   }
@@ -80,12 +77,6 @@ class Checkout extends Actor with Timers {
 
   private def setPaymentMethod(method: PaymentMethod) =
     this.paymentMethod = Some(method)
-
-
-  private def resetClock(timer: Timer) = {
-    timers.cancel(timer)
-    timers.startSingleTimer(timer, Timeout, 2 seconds)
-  }
 
   private def close = {
     println("closing - payment method: " + paymentMethod.get + " and delivery method: " + deliveryMethod.get)

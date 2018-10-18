@@ -1,8 +1,9 @@
-import akka.actor.{Actor, ActorSystem, Props, Timers}
+import akka.actor.{Actor, ActorSystem, Props, TimerScheduler, Timers}
 import akka.event.LoggingReceive
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
+import TimerAPI._
 
 case class Item(name: String)
 
@@ -17,16 +18,15 @@ object Cart {
   case object CheckoutStart extends Command
   case object CheckoutFail extends Command
 
-  sealed trait Event
-  case object Timeout extends Event
-  case object CartTimer
+  case object CartTimer extends Timer
+
 }
 
 class Cart extends Actor with Timers {
   import Cart._
-  import scala.concurrent.duration._
 
   var items: List[Item] = List()
+  implicit val timerScheduler: TimerScheduler = timers
 
   override def receive: Receive = LoggingReceive {
     case Init =>
@@ -44,36 +44,33 @@ class Cart extends Actor with Timers {
 
   def nonEmpty: Receive = LoggingReceive {
       case Timeout =>
+        println("Got timeout")
         clearItems
         context become empty
-      case Cart.AddItem(item) =>
-        resetClock
+      case AddItem(item) =>
+        resetTimer(CartTimer)
         println("Adding item " + item.name)
         items = item :: items
         context become nonEmpty
-      case Cart.RemoveItem(item) =>
+      case RemoveItem(item) =>
         println("Removing item " + item.name)
-        resetClock
+        resetTimer(CartTimer)
         items = items.filter(_ != item) // Delete it in another way (so that we can have multiple the same items
         if(items.isEmpty){
-          timers.cancel(CartTimer)
+          stopTimer(CartTimer)
+          println("Am empty again")
           context become empty
         }
-      case Cart.CheckoutStart =>
+      case CheckoutStart =>
         // here probably communicate with checkout actor
         println("In checkout with items: " + items.toString)
         context become inCheckout
     }
 
   def inCheckout: Receive = LoggingReceive {
-    case Cart.CheckoutFail =>
+    case CheckoutFail =>
       clearItems
       context become empty
-  }
-
-  private def resetClock = {
-    timers.cancel(CartTimer)
-    timers.startSingleTimer(CartTimer, Timeout, 10 seconds)
   }
 
   private def clearItems = items = List()
@@ -100,7 +97,6 @@ object CartApp extends App{
   mainActor ! Cart.AddItem(Item("koka kola"))
   mainActor ! Cart.AddItem(Item("ziemniak"))
   mainActor ! Cart.RemoveItem(Item("ziemniak"))
-  mainActor ! Cart.RemoveItem(Item("koka kola"))
   Thread.sleep(10059)
 
   Await.result(system.whenTerminated, Duration.Inf)
