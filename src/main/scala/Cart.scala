@@ -2,7 +2,6 @@ import Cart.GetState
 import akka.actor.{Actor, ActorSystem, Props, Timers}
 import akka.event.LoggingReceive
 
-import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 
