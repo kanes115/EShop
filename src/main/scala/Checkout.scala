@@ -84,7 +84,7 @@ class Checkout extends Actor with Timers {
 
   private def resetClock(timer: Timer) = {
     timers.cancel(timer)
-    timers.startSingleTimer(timer, Timeout, 10 seconds)
+    timers.startSingleTimer(timer, Timeout, 2 seconds)
   }
 
   private def close = {
@@ -93,7 +93,7 @@ class Checkout extends Actor with Timers {
   }
 
   private def cancel = {
-    println("closing...")
+    println("cancelling...")
     context become cancelled
   }
 }
@@ -117,8 +117,9 @@ object Checkoutpp extends App{
 
   mainActor ! "Init"
   mainActor ! SetDeliveryMethod(Courier)
-  mainActor ! SetPaymentMethod(Cows)
-  mainActor ! Pay
+  Thread.sleep(3000)
+  //mainActor ! SetPaymentMethod(Cows)
+  //mainActor ! Pay
 
   Await.result(system.whenTerminated, Duration.Inf)
 }

@@ -1,4 +1,3 @@
-import Cart.GetState
 import akka.actor.{Actor, ActorSystem, Props, Timers}
 import akka.event.LoggingReceive
 
@@ -41,8 +40,6 @@ class Cart extends Actor with Timers {
         println("Adding item " + item.name)
         items = item :: items
         context become nonEmpty
-      case GetState =>
-        println("Currently items are: " + items)
     }
 
   def nonEmpty: Receive = LoggingReceive {
@@ -64,9 +61,8 @@ class Cart extends Actor with Timers {
         }
       case Cart.CheckoutStart =>
         // here probably communicate with checkout actor
+        println("In checkout with items: " + items.toString)
         context become inCheckout
-      case GetState =>
-        println("Currently items are: " + items)
     }
 
   def inCheckout: Receive = LoggingReceive {
@@ -104,11 +100,8 @@ object CartApp extends App{
   mainActor ! Cart.AddItem(Item("koka kola"))
   mainActor ! Cart.AddItem(Item("ziemniak"))
   mainActor ! Cart.RemoveItem(Item("ziemniak"))
-  mainActor ! GetState
   mainActor ! Cart.RemoveItem(Item("koka kola"))
-  mainActor ! GetState
   Thread.sleep(10059)
-  mainActor ! GetState
 
   Await.result(system.whenTerminated, Duration.Inf)
 }
