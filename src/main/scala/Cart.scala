@@ -5,7 +5,6 @@ import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import TimerAPI._
 
-case class Item(name: String)
 
 object Cart {
 
@@ -17,13 +16,16 @@ object Cart {
   case object GetState extends Command
   case object CheckoutStart extends Command
   case object CheckoutFail extends Command
+  case object CheckoutClose extends Command
 
   case object CartTimer extends Timer
 
+  case class Item(name: String)
+
 }
 
+import Cart._
 class Cart extends Actor with Timers {
-  import Cart._
 
   var items: List[Item] = List()
   implicit val timerScheduler: TimerScheduler = timers
@@ -49,16 +51,13 @@ class Cart extends Actor with Timers {
         context become empty
       case AddItem(item) =>
         resetTimer(CartTimer)
-        println("Adding item " + item.name)
         items = item :: items
         context become nonEmpty
       case RemoveItem(item) =>
-        println("Removing item " + item.name)
         resetTimer(CartTimer)
         items = items.filter(_ != item) // Delete it in another way (so that we can have multiple the same items
         if(items.isEmpty){
           stopTimer(CartTimer)
-          println("Am empty again")
           context become empty
         }
       case CheckoutStart =>
@@ -69,8 +68,13 @@ class Cart extends Actor with Timers {
 
   def inCheckout: Receive = LoggingReceive {
     case CheckoutFail =>
-      clearItems
+      println("Checkouting failed")
       context become empty
+    case CheckoutClose =>
+      println("Checkouting with " + items)
+      clearItems
+      context become nonEmpty
+
   }
 
   private def clearItems = items = List()
@@ -91,13 +95,26 @@ class Customer extends Actor {
 
 object CartApp extends App{
   val system = ActorSystem("Reactive2")
-  val mainActor = system.actorOf(Props[Customer], "mainActor")
+  val cart = system.actorOf(Props[Customer], "mainActor")
 
-  mainActor ! "Init"
-  mainActor ! Cart.AddItem(Item("koka kola"))
-  mainActor ! Cart.AddItem(Item("ziemniak"))
-  mainActor ! Cart.RemoveItem(Item("ziemniak"))
-  Thread.sleep(10059)
+  cart ! "Init"
+  cart ! AddItem(Item("ala"))
+  cart ! AddItem(Item("ma kota"))
+  cart ! CheckoutStart
+  cart ! CheckoutClose
+  cart ! AddItem(Item("ala"))
+  cart ! AddItem(Item("ma kota"))
+  cart ! CheckoutStart
+  cart ! CheckoutFail
+  cart ! AddItem(Item("kicia"))
+  cart ! AddItem(Item("misisa"))
+  cart ! CheckoutStart
+  cart ! CheckoutClose
+  cart ! AddItem(Item("lol"))
+  Thread.sleep(3000)
+  cart ! AddItem(Item("ola"))
+  cart ! CheckoutStart
+  cart ! CheckoutClose
 
   Await.result(system.whenTerminated, Duration.Inf)
 }

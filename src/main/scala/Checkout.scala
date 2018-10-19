@@ -101,16 +101,16 @@ class ProbablyCart extends Actor {
   }
 }
 
-object Checkoutpp extends App{
+object CheckoutApp extends App {
   import Checkout._
-  val system = ActorSystem("Reactive2")
-  val mainActor = system.actorOf(Props[ProbablyCart], "mainActor")
 
-  mainActor ! "Init"
-  mainActor ! SetDeliveryMethod(Courier)
-  Thread.sleep(3000)
-  //mainActor ! SetPaymentMethod(Cows)
-  //mainActor ! Pay
+  val system = ActorSystem("Reactive2")
+  val checkout = system.actorOf(Props(classOf[ProbablyCart]))
+  checkout ! "Init"
+  checkout ! SetDeliveryMethod(Courier)
+  checkout ! SetPaymentMethod(Cows)
+  checkout ! Pay
+  Thread.sleep(2500) // move this line between messages to test each use case
 
   Await.result(system.whenTerminated, Duration.Inf)
 }
