@@ -17,34 +17,34 @@ object CartFSM {
 }
 
 
-class CartFSM extends Actor with FSM[CartFSM.State, List[Item]] {
+class CartFSM extends Actor with FSM[CartFSM.State, Set[Item]] {
   import CartFSM._
 
-  startWith(Empty, List()) // change list for set
+  startWith(Empty, Set.empty) // change list for set
 
   when(Empty) {
-    case Event(Cart.AddItem(item), Nil) =>
-      goto(NonEmpty) using List(item)
+    case Event(Cart.AddItem(item), s) if s.isEmpty =>
+      goto(NonEmpty) using Set(item)
   }
 
   when(NonEmpty, stateTimeout = 2 seconds) {
-    case Event(AddItem(item), list) =>
-      stay using item :: list
-    case Event(RemoveItem(itemToRemove), x :: Nil) if itemToRemove == x =>
-      goto(Empty) using Nil
-    case Event(RemoveItem(item), list) =>
-      stay using list.filter(_ != item)
-    case Event(CheckoutStart, list) =>
-      println("Checkouting with " + list.toString)
+    case Event(AddItem(item), items) =>
+      stay using items + item
+    case Event(RemoveItem(itemToRemove), items) if items.size == 1 && items(itemToRemove) =>
+      goto(Empty) using Set.empty
+    case Event(RemoveItem(item), items) =>
+      stay using items - item
+    case Event(CheckoutStart, items) =>
+      println("Checkouting with " + items.toString)
       //do sth
-      goto(InCheckout) using list
+      goto(InCheckout) using items
   }
 
   when(InCheckout) {
     case Event(CheckoutFail, data) =>
       goto(NonEmpty) using data
     case Event(CheckoutClose, data) =>
-      goto(Empty) using Nil
+      goto(Empty) using Set.empty
   }
 
 
@@ -52,7 +52,7 @@ class CartFSM extends Actor with FSM[CartFSM.State, List[Item]] {
     // common code for both states
     case Event(StateTimeout, _) ⇒
       println("Timeout. Going empty")
-      goto(Empty) using Nil
+      goto(Empty) using Set.empty
   }
 
   initialize()

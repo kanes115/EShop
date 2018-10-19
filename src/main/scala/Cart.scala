@@ -27,7 +27,7 @@ object Cart {
 import Cart._
 class Cart extends Actor with Timers {
 
-  var items: List[Item] = List()
+  var items: Set[Item] = Set.empty
   implicit val timerScheduler: TimerScheduler = timers
 
   override def receive: Receive = LoggingReceive {
@@ -40,7 +40,7 @@ class Cart extends Actor with Timers {
   def empty: Receive = LoggingReceive {
       case Cart.AddItem(item) =>
         println("Adding item " + item.name)
-        items = item :: items
+        items = items + item
         context become nonEmpty
     }
 
@@ -51,11 +51,11 @@ class Cart extends Actor with Timers {
         context become empty
       case AddItem(item) =>
         resetTimer(CartTimer)
-        items = item :: items
+        items = items + item
         context become nonEmpty
       case RemoveItem(item) =>
         resetTimer(CartTimer)
-        items = items.filter(_ != item) // Delete it in another way (so that we can have multiple the same items
+        items = items - item
         if(items.isEmpty){
           stopTimer(CartTimer)
           context become empty
@@ -77,7 +77,7 @@ class Cart extends Actor with Timers {
 
   }
 
-  private def clearItems = items = List()
+  private def clearItems = items = Set.empty
 
 }
 
