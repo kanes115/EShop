@@ -34,14 +34,13 @@ class CartFSM extends Actor with FSM[CartFSM.State, Set[Item]] {
 
   when(Empty) {
     case Event(AddItem(item), s) if s.isEmpty =>
-      println("sending done")
+      println(sender)
       sender ! Done
       goto(NonEmpty) using Set(item)
   }
 
   when(NonEmpty, stateTimeout = 2 seconds) {
     case Event(AddItem(item), items) =>
-      println("sending done")
       sender ! Done
       stay using items + item
     case Event(RemoveItem(itemToRemove), items) if items.size == 1 && items(itemToRemove) =>
