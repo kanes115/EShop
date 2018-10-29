@@ -26,12 +26,7 @@ class CheckoutFSM extends FSM[State, Data] {
 
   when(SelectingPayment) {
     case Event(SetPaymentMethod(method), Data(delivery, None)) =>
-      goto(ProcessingPayment) using Data(delivery, Some(method))
-  }
-
-  when(ProcessingPayment) {
-    case Event(Pay, data) =>
-      close(data)
+      close(Data(delivery, Some(method)))
   }
 
   when(Cancelled) {
@@ -63,6 +58,9 @@ class CheckoutFSM extends FSM[State, Data] {
 
   private def close(data: Data) =  {
     println("closing with " + data)
+    val paymentRef = context.actorOf(Props(classOf[Payment]))
+    context.parent ! CheckoutClosed(paymentRef)
+    sender ! CheckoutClosed(paymentRef)
     goto(Closed) using data
     //stop()
   }

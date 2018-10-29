@@ -18,9 +18,11 @@ object Cart {
   case object CheckoutFail extends Command
   case object CheckoutClose extends Command
 
+  sealed trait Event
+  case object Done extends Event
+
   case object CartTimer extends Timer
 
-  case class Item(name: String)
 
 }
 

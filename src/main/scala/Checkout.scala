@@ -1,5 +1,5 @@
 import TimerAPI._
-import akka.actor.{Actor, ActorSystem, Props, Timers}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, Timers}
 import akka.event.LoggingReceive
 
 import scala.concurrent.Await
@@ -14,10 +14,14 @@ object Checkout {
   case class SetPaymentMethod(paymentMethod: PaymentMethod) extends Command
   case object Pay extends Command
 
+  sealed trait Event
+  case class CheckoutClosed(paymentRef: ActorRef) extends Event
+
   sealed trait DeliveryMethod
   case object Courier extends DeliveryMethod
   case object Post extends DeliveryMethod
   case object PersonalReception extends DeliveryMethod
+
 
   sealed trait PaymentMethod
   case object Card extends PaymentMethod
