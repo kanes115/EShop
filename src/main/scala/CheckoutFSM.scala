@@ -1,12 +1,43 @@
-import Checkout._
-import akka.actor.{ActorSystem, FSM, Props}
+import CheckoutFSM._
+import TimerAPI.Timer
+import akka.actor.{ActorRef, ActorSystem, FSM, Props}
 
-sealed trait State
-case object SelectingDelivery extends State
-case object SelectingPayment extends State
-case object ProcessingPayment extends State
-case object Cancelled extends State
-case object Closed extends State
+
+object CheckoutFSM {
+
+  //commands
+  sealed trait Command
+  case object Init extends Command
+  case class SetDeliveryMethod(deliveryMethod: DeliveryMethod) extends Command
+  case class SetPaymentMethod(paymentMethod: PaymentMethod) extends Command
+  case object Pay extends Command
+
+  sealed trait Event
+  case class CheckoutClosed(paymentRef: ActorRef) extends Event
+  case object CheckoutFailed extends Event
+
+  sealed trait State
+  case object SelectingDelivery extends State
+  case object SelectingPayment extends State
+  case object ProcessingPayment extends State
+  case object Cancelled extends State
+  case object Closed extends State
+
+
+  sealed trait DeliveryMethod
+  case object Courier extends DeliveryMethod
+  case object Post extends DeliveryMethod
+  case object PersonalReception extends DeliveryMethod
+
+
+  sealed trait PaymentMethod
+  case object Card extends PaymentMethod
+  case object Cash extends PaymentMethod
+  case object Cows extends PaymentMethod
+
+  case object CheckoutTimer extends Timer
+  case object PaymentTimer extends Timer
+}
 
 case class Data(deliveryMethod: Option[DeliveryMethod],
                 paymentMethod: Option[PaymentMethod])
@@ -73,13 +104,4 @@ class CheckoutFSM extends FSM[State, Data] {
 
   initialize()
 
-}
-
-object CheckoutFSMApp extends App {
-  val system = ActorSystem("Reactive2")
-  val checkout = system.actorOf(Props(classOf[CheckoutFSM]))
-  checkout ! SetDeliveryMethod(Courier)
-  checkout ! SetPaymentMethod(Cows)
-  Thread.sleep(2500) // move this line between messages to test each use case
-  checkout ! Pay
 }

@@ -1,4 +1,4 @@
-import Checkout.{Courier, Cows}
+import CheckoutFSM.{Courier, Cows}
 import OrderManager._
 
 import scala.concurrent.duration._
