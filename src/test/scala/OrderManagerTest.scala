@@ -1,27 +1,40 @@
+import CartFSM.GetItems
 import CheckoutFSM.{Courier, Cows}
 import OrderManager._
 
 import scala.concurrent.duration._
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.ask
-import akka.testkit.{TestFSMRef, TestKit}
+import akka.persistence.inmemory.extension.{InMemoryJournalStorage, InMemorySnapshotStorage, StorageExtension}
+import akka.testkit.{ImplicitSender, TestActors, TestFSMRef, TestKit, TestProbe}
 import akka.util.Timeout
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
+import org.scalatest.time.{Milliseconds, Span}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Matchers, WordSpecLike}
 
 class OrderManagerTest
   extends TestKit(ActorSystem("OrderManagerTest"))
     with WordSpecLike
     with BeforeAndAfterAll
+    with BeforeAndAfterEach
     with ScalaFutures
-    with Matchers {
+    with Matchers
+    with ImplicitSender {
 
-  implicit val timeout: Timeout = 1.second
+  override protected def beforeEach(): Unit = {
+    val tp = TestProbe()
+    tp.send(StorageExtension(system).journalStorage, InMemoryJournalStorage.ClearJournal)
+    tp.expectMsg(akka.actor.Status.Success(""))
+    tp.send(StorageExtension(system).snapshotStorage, InMemorySnapshotStorage.ClearSnapshots)
+    tp.expectMsg(akka.actor.Status.Success(""))
+    super.beforeEach()
+  }
 
-  "An order manager" must {
-    "supervise whole order process" in {
+  override implicit def patienceConfig: PatienceConfig = PatienceConfig(timeout = Span(5000, Milliseconds))
 
-      def sendMessageAndValidateState(
+  implicit val timeout: Timeout = 5.second
+
+  def sendMessageAndValidateState(
                                        orderManager: TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager],
                                        message: OrderManager.Command,
                                        expectedState: OrderManager.State
@@ -29,6 +42,14 @@ class OrderManagerTest
         (orderManager ? message).mapTo[OrderManager.Ack].futureValue shouldBe Done
         orderManager.stateName shouldBe expectedState
       }
+
+  def syncSend(to: ActorRef, msg: Any, expectedRes: Any) = {
+    to ! msg
+    expectMsg(expectedRes)
+  }
+
+  "An order manager" must {
+    "supervise whole order process" in {
 
       val orderManager = TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager](new OrderManager("orderManagerId"))
       orderManager.stateName shouldBe Uninitialized
@@ -41,6 +62,54 @@ class OrderManagerTest
 
       sendMessageAndValidateState(orderManager, Pay, Finished)
     }
+
   }
+
+  // We use in-memory journal for convienience
+  "A Cart" must {
+    "return to persisted state" in {
+      val cart = system.actorOf(Props(classOf[CartFSM]))
+      syncSend(cart, GetItems, Cart.empty)
+
+      syncSend(cart, CartFSM.AddItem(Item("rollerblades")), CartFSM.Done)
+      syncSend(cart, CartFSM.AddItem(Item("ala")), CartFSM.Done)
+
+      syncSend(cart, GetItems, Cart(Set(Item("rollerblades"), Item("ala"))))
+
+      cart ! PoisonPill
+
+      val cart2 = system.actorOf(Props(classOf[CartFSM]))
+      syncSend(cart2, GetItems, Cart(Set(Item("rollerblades"), Item("ala"))))
+
+    }
+
+    "recover 5 seconds timer" in {
+      val cart = system.actorOf(Props(classOf[CartFSM]))
+
+      syncSend(cart, CartFSM.AddItem(Item("rollerblades")), CartFSM.Done)
+
+      cart ! PoisonPill
+
+      val cart2 = system.actorOf(Props(classOf[CartFSM]))
+      Thread.sleep(6000)
+      syncSend(cart2, GetItems, Cart.empty)
+
+    }
+
+    "remove items" in {
+      val cart = system.actorOf(Props(classOf[CartFSM]))
+      syncSend(cart, GetItems, Cart.empty)
+
+      syncSend(cart, CartFSM.AddItem(Item("rollerblades")), CartFSM.Done)
+      syncSend(cart, CartFSM.AddItem(Item("ala")), CartFSM.Done)
+
+      syncSend(cart, GetItems, Cart(Set(Item("rollerblades"), Item("ala"))))
+
+      syncSend(cart, CartFSM.RemoveItem(Item("ala")), CartFSM.Done)
+    }
+  }
+
+
+
 
 }
