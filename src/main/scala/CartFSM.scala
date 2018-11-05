@@ -1,7 +1,12 @@
+import CartFSM.CartChangeEvent
 import akka.actor.{Actor, ActorSystem, FSM, Props}
 
 import scala.concurrent.duration._
 import TimerAPI.Timer
+import akka.persistence.fsm.PersistentFSM
+
+import scala.reflect._
+
 
 
 object CartFSM {
@@ -24,27 +29,30 @@ object CartFSM {
   case object NonEmpty extends State
   case object InCheckout extends State
 
+  case class CartChangeEvent()
+
 }
 
 
-class CartFSM extends Actor with FSM[CartFSM.State, Set[Item]] {
+class CartFSM extends Actor with FSM[CartFSM.State, Cart] {
   import CartFSM._
 
-  startWith(Empty, Set.empty) // change list for set
+
+  startWith(Empty, Cart.empty)
 
   when(Empty) {
     case Event(AddItem(item), s) if s.isEmpty =>
       println(sender)
       sender ! Done
-      goto(NonEmpty) using Set(item)
+      goto(NonEmpty) using s + item
   }
 
   when(NonEmpty, stateTimeout = 2 seconds) {
     case Event(AddItem(item), items) =>
       sender ! Done
       stay using items + item
-    case Event(RemoveItem(itemToRemove), items) if items.size == 1 && items(itemToRemove) =>
-      goto(Empty) using Set.empty
+    case Event(RemoveItem(itemToRemove), items) if items.size == 1 && items.contains(itemToRemove) =>
+      goto(Empty) using Cart.empty
     case Event(RemoveItem(item), items) =>
       stay using items - item
     case Event(CheckoutStart, items) =>
@@ -57,7 +65,7 @@ class CartFSM extends Actor with FSM[CartFSM.State, Set[Item]] {
     case Event(CheckoutFSM.CheckoutFailed, data) =>
       goto(NonEmpty) using data
     case Event(CheckoutFSM.CheckoutClosed(_), data) =>
-      goto(Empty) using Set.empty
+      goto(Empty) using Cart.empty
   }
 
 
@@ -65,7 +73,7 @@ class CartFSM extends Actor with FSM[CartFSM.State, Set[Item]] {
     // common code for both states
     case Event(StateTimeout, _) ⇒
       println("Timeout. Going empty")
-      goto(Empty) using Set.empty
+      goto(Empty) using Cart.empty
   }
 
   initialize()
