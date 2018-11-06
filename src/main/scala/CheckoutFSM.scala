@@ -98,6 +98,7 @@ class CheckoutFSM extends FSM[State, Data] {
 
   private def cancel(data: Data) = {
     println("Cancelling with " + data)
+    context.parent ! CheckoutFailed
     goto(Cancelled) using data
     //stop() this is to be resolved on next labs (as we will put together actors)
   }

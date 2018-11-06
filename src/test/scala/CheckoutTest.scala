@@ -11,12 +11,19 @@ class CheckoutTest extends TestKit(ActorSystem("CheckoutSystem"))
   }
 
   "Checkout" must {
-    "ala" in {
+    "closes after two messages" in {
       val cart = TestProbe()
       val checkout = cart.childActorOf(Props(new CheckoutFSM))
       checkout ! SetDeliveryMethod(Courier)
       checkout ! SetPaymentMethod(Cows)
       cart.expectMsgType[CheckoutClosed]
+    }
+    "timeout after 2 seconds" in {
+      val cart = TestProbe()
+      val checkout = cart.childActorOf(Props(new CheckoutFSM))
+      checkout ! SetDeliveryMethod(Courier)
+      Thread.sleep(3000)
+      cart.expectMsgType[CheckoutFailed.type]
     }
   }
 
