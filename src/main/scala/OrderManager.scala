@@ -59,6 +59,7 @@ class OrderManager(val id: String) extends FSM[OrderManager.State, OrderManager.
       cart ! CartFSM.CheckoutStart
       stay using CartDataWithSender(cart, sender)
     case Event(CheckoutStarted(checkoutRef), CartDataWithSender(_, originalSender)) =>
+      checkoutRef ! CheckoutFSM.Init
       originalSender ! Done
       goto(InCheckout) using InCheckoutDataWithSender(checkoutRef, sender)
   }

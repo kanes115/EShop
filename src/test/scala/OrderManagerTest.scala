@@ -1,5 +1,5 @@
 import CartFSM.GetItems
-import CheckoutFSM.{Courier, Cows}
+import CheckoutFSM.{Done => _, Pay => _, _}
 import OrderManager._
 
 import scala.concurrent.duration._
@@ -52,7 +52,7 @@ class OrderManagerTest
     "supervise whole order process" in {
 
       val orderManager = TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager](new OrderManager("orderManagerId"))
-      orderManager.stateName shouldBe Uninitialized
+      orderManager.stateName shouldBe OrderManager.Uninitialized
 
       sendMessageAndValidateState(orderManager, AddItem(Item("rollerblades")), Open)
 
@@ -109,7 +109,39 @@ class OrderManagerTest
     }
   }
 
+  "A checkout" must {
+    "restore state" in {
+      val checkout = system.actorOf(Props(classOf[CheckoutFSM]))
+      syncSend(checkout, Init, CheckoutFSM.Done)
+      syncSend(checkout, GetData, Data(None, None))
 
+      syncSend(checkout, SetDeliveryMethod(Courier), CheckoutFSM.Done)
+      syncSend(checkout, GetData, Data(Some(Courier), None))
+
+      checkout ! PoisonPill
+
+      val checkout2 = system.actorOf(Props(classOf[CheckoutFSM]))
+      syncSend(checkout2, GetData, Data(Some(Courier), None))
+    }
+
+    "restore timers" in {
+      val checkout = system.actorOf(Props(classOf[CheckoutFSM]))
+      syncSend(checkout, Init, CheckoutFSM.Done)
+      syncSend(checkout, GetState, SelectingDelivery)
+      syncSend(checkout, GetData, Data(None, None))
+
+      syncSend(checkout, SetDeliveryMethod(Courier), CheckoutFSM.Done)
+      syncSend(checkout, GetData, Data(Some(Courier), None))
+
+      checkout ! PoisonPill
+
+      val checkout2 = system.actorOf(Props(classOf[CheckoutFSM]))
+      syncSend(checkout2, GetData, Data(Some(Courier), None))
+      Thread.sleep(6000)
+      syncSend(checkout2, GetState, Cancelled)
+
+    }
+  }
 
 
 }
