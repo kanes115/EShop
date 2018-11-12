@@ -1,4 +1,5 @@
 import CartFSM.CartChangeEvent
+import Payer.TestStatus
 import akka.actor.{Actor, ActorSystem, FSM, Props}
 
 import scala.concurrent.duration._
@@ -12,6 +13,8 @@ import scala.reflect._
 
 
 object CartFSM {
+
+  implicit val getStatus: Int => TestStatus = _ => Payer.Ok
 
   //commands
   sealed trait Command
@@ -50,7 +53,7 @@ object CartFSM {
 }
 
 
-class CartFSM extends Actor with PersistentFSM[CartFSM.State, Cart, CartChangeEvent] {
+class CartFSM(implicit val getStatus: Int => TestStatus) extends Actor with PersistentFSM[CartFSM.State, Cart, CartChangeEvent] {
   import CartFSM._
 
   override def persistenceId = "persistent-cart-fsm-id-1"
@@ -72,7 +75,8 @@ class CartFSM extends Actor with PersistentFSM[CartFSM.State, Cart, CartChangeEv
     case Event(RemoveItem(item), items) =>
       stay applying ItemRemoved(item) replying Done
     case Event(CheckoutStart, items) =>
-      val checkout = context.actorOf(Props(classOf[CheckoutFSM]))
+      implicit val a = getStatus
+      val checkout = context.actorOf(Props(new CheckoutFSM))
       sender ! OrderManager.CheckoutStarted(checkout)
       goto(InCheckout)
   }

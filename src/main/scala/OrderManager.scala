@@ -1,12 +1,13 @@
 import CheckoutFSM.{DeliveryMethod, PaymentMethod}
 import OrderManager.{Error, _}
+import Payer.{Ok, TestStatus}
 import Payment.PaymentReceived
 import akka.actor.{Actor, ActorRef, FSM, Props}
 
 
 object OrderManager {
 
- // implicit val getStatus: Int => Int = _ => 200
+  implicit val getStatus: Int => TestStatus = _ => Ok
   sealed trait State
   case object Uninitialized extends State
   case object Open extends State
@@ -41,13 +42,13 @@ object OrderManager {
 }
 
 
-class OrderManager(val id: String)(implicit getStatus: Int => Int) extends FSM[OrderManager.State, OrderManager.Data] {
+class OrderManager(val id: String)(implicit getStatus: Int => TestStatus) extends FSM[OrderManager.State, OrderManager.Data] {
 
   startWith(Uninitialized, Empty())
 
   when(Uninitialized) {
     case Event(AddItem(item), _) =>
-      val cart = context.actorOf(Props(classOf[CartFSM]))
+      val cart = context.actorOf(Props(new CartFSM(getStatus)))
       cart ! CartFSM.AddItem(item)
       goto(Open) using CartDataWithSender(cart, sender)
   }

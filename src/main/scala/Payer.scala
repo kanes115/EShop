@@ -1,4 +1,4 @@
-import Payer.{InternalPaymentServiceException, MakePayment, PaymentServiceTemporarilyUnavailable, Success}
+import Payer._
 import akka.actor.Actor
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, HttpResponse, StatusCodes}
@@ -18,11 +18,23 @@ object Payer {
   //   this needs to abort the procedure
   case class PaymentServiceTemporarilyUnavailable() extends Exception
 
+  trait TestStatus {
+    def toInt: Int
+  }
+  case object Ok extends TestStatus {
+    override def toInt: Int = 200
+  }
+  case object Unavailable extends TestStatus {
+    override def toInt: Int = 503
+  }
+  case object Internal extends TestStatus {
+    override def toInt: Int = 500
+  }
+
   var counter: Int = 0
-  def ++ = counter += 1
 }
 
-class Payer extends Actor {
+class Payer(val getStatus: Int => TestStatus) extends Actor {
 
     import akka.pattern.pipe
     import context.dispatcher
@@ -32,10 +44,10 @@ class Payer extends Actor {
     val http = Http(context.system)
 
     override def preStart() = {
-      val status = getStatus
-      Payer.++
-      println("Now status is: " + status.toString)
-      http.singleRequest(HttpRequest(uri = "http://localhost:80/status/" + status.toString))
+      val status = getStatus(Payer.counter)
+      Payer.counter += 1
+      println("Now status is: " + status)
+      http.singleRequest(HttpRequest(uri = "http://localhost:80/status/" + status.toInt.toString))
         .pipeTo(self)
     }
 
@@ -55,11 +67,11 @@ class Payer extends Actor {
         throw new InternalPaymentServiceException()
     }
 
-  private def getStatus =
-    if(Payer.counter < 2)
-      500 // we will fail 3 times for fun
-    else
-      200
+//  private def getStatus =
+//    if(Payer.counter < 2)
+//      500 // we will fail 3 times for fun
+//    else
+//      200
 
   // uncomment for the test called "supervise whole order process and gets error if payment service returns 503"
   // private def getStatus = 503

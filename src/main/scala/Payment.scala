@@ -1,6 +1,8 @@
+import Payer.TestStatus
 import Payment._
 import akka.actor.SupervisorStrategy.{Escalate, Restart, Resume, Stop}
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props}
+
 import scala.concurrent.duration._
 
 object Payment {
@@ -20,10 +22,10 @@ object Payment {
   case object PaymentReceived extends Event
 }
 
-class Payment extends FSM[Payment.State, Payment.Data] {
+class Payment(val getStatus: Int => TestStatus) extends FSM[Payment.State, Payment.Data] {
 
   override val supervisorStrategy =
-    OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
+    OneForOneStrategy(maxNrOfRetries = 3, withinTimeRange = Duration.Inf) {
       case Payer.InternalPaymentServiceException() => Restart
       case _ => Escalate
     }
@@ -52,7 +54,7 @@ class Payment extends FSM[Payment.State, Payment.Data] {
   }
 
   private def doPay(): Unit = {
-    val payer = context.actorOf(Props[Payer], "payer")
+    val payer = context.actorOf(Props(new Payer(getStatus)), "payer")
   }
 
 }

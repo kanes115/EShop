@@ -1,4 +1,5 @@
 import CheckoutFSM._
+import Payer.{Ok, TestStatus}
 import TimerAPI.Timer
 import akka.actor.SupervisorStrategy.Stop
 import akka.actor.{ActorRef, ActorSystem, FSM, OneForOneStrategy, Props}
@@ -10,6 +11,8 @@ import scala.reflect.ClassTag
 
 
 object CheckoutFSM {
+
+  implicit val getStatus: Int => TestStatus = _ => Ok
 
   //commands
   sealed trait Command
@@ -25,7 +28,16 @@ object CheckoutFSM {
   sealed trait Event
   case class CheckoutClosed(paymentRef: ActorRef) extends Event
   case object CheckoutFailed extends Event
-  case object PaymentServiceUnavailable extends Event
+
+  sealed trait ErrorReason extends Event {
+    def toMsg: String
+  }
+  case object PaymentServiceUnavailable extends ErrorReason {
+    override def toMsg: String = "Payment service unavailable"
+  }
+  case object PaymentServiceCrashes extends ErrorReason {
+    override def toMsg: String = "Payment service crashes"
+  }
   case class Error(msg: String) extends Event
 
   sealed trait State extends FSMState
@@ -85,13 +97,18 @@ case class DataWithManager(deliveryMethod: Option[DeliveryMethod],
                 paymentMethod: Option[PaymentMethod], manager: ActorRef) extends Data
 
 
-class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
+class CheckoutFSM(implicit val getStatus: Int => Payer.TestStatus) extends PersistentFSM[State, Data, CheckoutChangeEvent] {
   import scala.concurrent.duration._
 
   override val supervisorStrategy =
-    OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
+    OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = Duration.Inf) {
       case Payer.PaymentServiceTemporarilyUnavailable() =>
         self ! PaymentServiceUnavailable
+        Stop
+      case _ =>
+        // this does not get called because exceeding maxNrOfRetries in Payment actor only stops the child but does not
+        // escalate - how to escalate?
+        self ! PaymentServiceCrashes
         Stop
     }
 
@@ -126,9 +143,10 @@ class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
   }
 
   when(Closed) {
-    case Event(PaymentServiceUnavailable, DataWithManager(deliveryMethod, paymentMethod, manager)) =>
-      manager ! Error("Payment service unavailable")
-      context.parent ! Error("Payment service unavailable")
+    case Event(e: ErrorReason, DataWithManager(deliveryMethod, paymentMethod, manager)) =>
+      val msg: String = e.toMsg
+      manager ! Error(msg)
+      context.parent ! Error(msg)
       println("Checkout knows payment service is down")
       stay
     case Event(GetState, _) =>
@@ -165,7 +183,7 @@ class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
 
   private def close(data: Methods) =  {
     println("closing with " + data)
-    val paymentRef = context.actorOf(Props(classOf[Payment]))
+    val paymentRef = context.actorOf(Props(new Payment(getStatus)))
     context.parent ! CheckoutClosed(paymentRef)
     sender ! CheckoutClosed(paymentRef)
     goto(Closed) applying PaymentWasSet(data.paymentMethod.get, sender) applying TimerCancel("checkoutTiemer")

@@ -13,7 +13,8 @@ class CheckoutTest extends TestKit(ActorSystem("CheckoutSystem"))
   "Checkout" must {
     "ala" in {
       val cart = TestProbe()
-      val checkout = cart.childActorOf(Props(new CheckoutFSM))
+      val checkout = cart.childActorOf(Props(new CheckoutFSM()))
+      checkout ! Init
       checkout ! SetDeliveryMethod(Courier)
       checkout ! SetPaymentMethod(Cows)
       cart.expectMsgType[CheckoutClosed]
