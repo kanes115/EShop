@@ -1,6 +1,6 @@
 import CartFSM.GetItems
 import CheckoutFSM.{Done => _, Pay => _, _}
-import OrderManager._
+import OrderManager.{Error, _}
 
 import scala.concurrent.duration._
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props}
@@ -38,8 +38,8 @@ class OrderManagerTest
                                        orderManager: TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager],
                                        message: OrderManager.Command,
                                        expectedState: OrderManager.State
-                                     ): Unit = {
-        (orderManager ? message).mapTo[OrderManager.Ack].futureValue shouldBe Done
+                                     )(implicit ack: Ack): Unit = {
+        (orderManager ? message).mapTo[OrderManager.Ack].futureValue shouldBe ack
         orderManager.stateName shouldBe expectedState
       }
 
@@ -48,7 +48,11 @@ class OrderManagerTest
     expectMsg(expectedRes)
   }
 
+  implicit val ack: Ack = Done
+
   "An order manager" must {
+
+    // getStatus must return 200 after a few tries
     "supervise whole order process" in {
 
       val orderManager = TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager](new OrderManager("orderManagerId"))
@@ -64,6 +68,36 @@ class OrderManagerTest
     }
 
   }
+
+  // getStatus must return 503
+  "supervise whole order process and gets error if payment service returns 503" in {
+
+      val orderManager = TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager](new OrderManager("orderManagerId"))
+      orderManager.stateName shouldBe OrderManager.Uninitialized
+
+      sendMessageAndValidateState(orderManager, AddItem(Item("rollerblades")), Open)
+
+      sendMessageAndValidateState(orderManager, Buy, InCheckout)
+
+      sendMessageAndValidateState(orderManager, SelectDeliveryAndPaymentMethod(Courier, Cows), InPayment)
+
+      sendMessageAndValidateState(orderManager, Pay, Finished)(Error)
+    }
+
+  // getStatus must return 500 all the time
+  "supervise whole order process and gets error if payment service returns 500 more than 10 times in 1 minute" in {
+
+      val orderManager = TestFSMRef[OrderManager.State, OrderManager.Data, OrderManager](new OrderManager("orderManagerId"))
+      orderManager.stateName shouldBe OrderManager.Uninitialized
+
+      sendMessageAndValidateState(orderManager, AddItem(Item("rollerblades")), Open)
+
+      sendMessageAndValidateState(orderManager, Buy, InCheckout)
+
+      sendMessageAndValidateState(orderManager, SelectDeliveryAndPaymentMethod(Courier, Cows), InPayment)
+
+      sendMessageAndValidateState(orderManager, Pay, Finished)(Error)
+    }
 
   // We use in-memory journal for convienience
   "A Cart" must {
@@ -113,30 +147,30 @@ class OrderManagerTest
     "restore state" in {
       val checkout = system.actorOf(Props(classOf[CheckoutFSM]))
       syncSend(checkout, Init, CheckoutFSM.Done)
-      syncSend(checkout, GetData, Data(None, None))
+      syncSend(checkout, GetData, Methods(None, None))
 
       syncSend(checkout, SetDeliveryMethod(Courier), CheckoutFSM.Done)
-      syncSend(checkout, GetData, Data(Some(Courier), None))
+      syncSend(checkout, GetData, Methods(Some(Courier), None))
 
       checkout ! PoisonPill
 
       val checkout2 = system.actorOf(Props(classOf[CheckoutFSM]))
-      syncSend(checkout2, GetData, Data(Some(Courier), None))
+      syncSend(checkout2, GetData, Methods(Some(Courier), None))
     }
 
     "restore timers" in {
       val checkout = system.actorOf(Props(classOf[CheckoutFSM]))
       syncSend(checkout, Init, CheckoutFSM.Done)
       syncSend(checkout, GetState, SelectingDelivery)
-      syncSend(checkout, GetData, Data(None, None))
+      syncSend(checkout, GetData, Methods(None, None))
 
       syncSend(checkout, SetDeliveryMethod(Courier), CheckoutFSM.Done)
-      syncSend(checkout, GetData, Data(Some(Courier), None))
+      syncSend(checkout, GetData, Methods(Some(Courier), None))
 
       checkout ! PoisonPill
 
       val checkout2 = system.actorOf(Props(classOf[CheckoutFSM]))
-      syncSend(checkout2, GetData, Data(Some(Courier), None))
+      syncSend(checkout2, GetData, Methods(Some(Courier), None))
       Thread.sleep(6000)
       syncSend(checkout2, GetState, Cancelled)
 

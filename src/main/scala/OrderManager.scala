@@ -1,9 +1,12 @@
 import CheckoutFSM.{DeliveryMethod, PaymentMethod}
-import OrderManager._
+import OrderManager.{Error, _}
 import Payment.PaymentReceived
 import akka.actor.{Actor, ActorRef, FSM, Props}
 
+
 object OrderManager {
+
+ // implicit val getStatus: Int => Int = _ => 200
   sealed trait State
   case object Uninitialized extends State
   case object Open extends State
@@ -24,6 +27,7 @@ object OrderManager {
 
   sealed trait Ack
   case object Done extends Ack
+  case object Error extends Ack
 
   sealed trait Data
   case class Empty() extends Data
@@ -36,7 +40,8 @@ object OrderManager {
   case class InPaymentDataWithSender(paymentRef: ActorRef, sender: ActorRef) extends Data
 }
 
-class OrderManager(val id: String) extends FSM[OrderManager.State, OrderManager.Data] {
+
+class OrderManager(val id: String)(implicit getStatus: Int => Int) extends FSM[OrderManager.State, OrderManager.Data] {
 
   startWith(Uninitialized, Empty())
 
@@ -80,6 +85,9 @@ class OrderManager(val id: String) extends FSM[OrderManager.State, OrderManager.
       stay using InPaymentDataWithSender(paymentRef, sender)
     case Event(PaymentReceived, InPaymentDataWithSender(_, originalSender)) =>
       originalSender ! Done
+      goto(Finished) using Empty()
+    case Event(CheckoutFSM.Error(msg), InPaymentDataWithSender(_, originalSender)) =>
+      originalSender ! OrderManager.Error
       goto(Finished) using Empty()
   }
 

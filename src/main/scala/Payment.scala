@@ -24,7 +24,8 @@ class Payment extends FSM[Payment.State, Payment.Data] {
 
   override val supervisorStrategy =
     OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
-      case _ => Restart
+      case Payer.InternalPaymentServiceException() => Restart
+      case _ => Escalate
     }
 
   startWith(WaitingForPay, Empty())

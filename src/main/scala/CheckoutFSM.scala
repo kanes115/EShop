@@ -1,6 +1,7 @@
 import CheckoutFSM._
 import TimerAPI.Timer
-import akka.actor.{ActorRef, ActorSystem, FSM, Props}
+import akka.actor.SupervisorStrategy.Stop
+import akka.actor.{ActorRef, ActorSystem, FSM, OneForOneStrategy, Props}
 import akka.persistence.fsm.PersistentFSM
 import akka.persistence.fsm.PersistentFSM.FSMState
 
@@ -24,6 +25,8 @@ object CheckoutFSM {
   sealed trait Event
   case class CheckoutClosed(paymentRef: ActorRef) extends Event
   case object CheckoutFailed extends Event
+  case object PaymentServiceUnavailable extends Event
+  case class Error(msg: String) extends Event
 
   sealed trait State extends FSMState
   case object Uninitialized extends State {
@@ -65,26 +68,39 @@ object CheckoutFSM {
 
   sealed trait CheckoutChangeEvent
   case class DeliveryWasSet(method: DeliveryMethod) extends CheckoutChangeEvent
-  case class PaymentWasSet(method: PaymentMethod) extends CheckoutChangeEvent
+  case class PaymentWasSet(method: PaymentMethod, manager: ActorRef) extends CheckoutChangeEvent
   case class TimerSet(timer: String) extends CheckoutChangeEvent
   case class TimerCancel(timer: String) extends CheckoutChangeEvent
 
 
 }
 
-case class Data(deliveryMethod: Option[DeliveryMethod],
-                paymentMethod: Option[PaymentMethod])
+sealed trait Data
+
+case class Methods(deliveryMethod: Option[DeliveryMethod],
+                   paymentMethod: Option[PaymentMethod]) extends Data
+
+
+case class DataWithManager(deliveryMethod: Option[DeliveryMethod],
+                paymentMethod: Option[PaymentMethod], manager: ActorRef) extends Data
 
 
 class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
   import scala.concurrent.duration._
+
+  override val supervisorStrategy =
+    OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1 minute) {
+      case Payer.PaymentServiceTemporarilyUnavailable() =>
+        self ! PaymentServiceUnavailable
+        Stop
+    }
 
   case object Timeout
 
   override def persistenceId = "persistent-checkout-fsm-id-1"
   override def domainEventClassTag: ClassTag[CheckoutChangeEvent] = classTag[CheckoutChangeEvent]
 
-  startWith(Uninitialized, Data(None, None))
+  startWith(Uninitialized, Methods(None, None))
 
   when(Uninitialized) {
     case Event(Init, data) =>
@@ -92,13 +108,13 @@ class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
   }
 
   when(SelectingDelivery) {
-    case Event(SetDeliveryMethod(method), Data(None, None)) =>
+    case Event(SetDeliveryMethod(method), Methods(None, None)) =>
       goto(SelectingPayment) applying DeliveryWasSet(method) replying Done // Data(Some(method), None)
   }
 
   when(SelectingPayment) {
-    case Event(SetPaymentMethod(method), Data(delivery, None)) =>
-      close(Data(delivery, Some(method)))
+    case Event(SetPaymentMethod(method), Methods(delivery, None)) =>
+      close(Methods(delivery, Some(method)))
   }
 
   when(Cancelled) {
@@ -110,6 +126,11 @@ class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
   }
 
   when(Closed) {
+    case Event(PaymentServiceUnavailable, DataWithManager(deliveryMethod, paymentMethod, manager)) =>
+      manager ! Error("Payment service unavailable")
+      context.parent ! Error("Payment service unavailable")
+      println("Checkout knows payment service is down")
+      stay
     case Event(GetState, _) =>
       stay replying stateName
     case Event(_, data) =>
@@ -128,8 +149,9 @@ class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
 
 
   override def applyEvent(domainEvent: CheckoutChangeEvent, currentData: Data): Data = domainEvent match {
-    case DeliveryWasSet(method) => Data(Some(method), None)
-    case PaymentWasSet(method) => Data(currentData.deliveryMethod, Some(method))
+    case DeliveryWasSet(method) => Methods(Some(method), None)
+    case PaymentWasSet(method, manager) =>
+      DataWithManager(currentData.asInstanceOf[Methods].deliveryMethod, Some(method), manager)
     case TimerSet(timer) =>
       println("Setting timer")
       setTimer(timer, Timeout, 5 second, repeat = false)
@@ -141,12 +163,12 @@ class CheckoutFSM extends PersistentFSM[State, Data, CheckoutChangeEvent] {
 
   }
 
-  private def close(data: Data) =  {
+  private def close(data: Methods) =  {
     println("closing with " + data)
     val paymentRef = context.actorOf(Props(classOf[Payment]))
     context.parent ! CheckoutClosed(paymentRef)
     sender ! CheckoutClosed(paymentRef)
-    goto(Closed) applying PaymentWasSet(data.paymentMethod.get) applying TimerCancel("checkoutTiemer")
+    goto(Closed) applying PaymentWasSet(data.paymentMethod.get, sender) applying TimerCancel("checkoutTiemer")
     //stop()
   }
 

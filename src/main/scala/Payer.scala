@@ -1,4 +1,4 @@
-import Payer.{MakePayment, Success}
+import Payer.{InternalPaymentServiceException, MakePayment, PaymentServiceTemporarilyUnavailable, Success}
 import akka.actor.Actor
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, HttpResponse, StatusCodes}
@@ -11,6 +11,15 @@ object Payer {
 
   sealed trait Event
   case object Success extends Event
+
+  // Exceptions
+  //   this needs retry
+  case class InternalPaymentServiceException() extends Exception
+  //   this needs to abort the procedure
+  case class PaymentServiceTemporarilyUnavailable() extends Exception
+
+  var counter: Int = 0
+  def ++ = counter += 1
 }
 
 class Payer extends Actor {
@@ -23,7 +32,10 @@ class Payer extends Actor {
     val http = Http(context.system)
 
     override def preStart() = {
-      http.singleRequest(HttpRequest(uri = "http://localhost:80/"))
+      val status = getStatus
+      Payer.++
+      println("Now status is: " + status.toString)
+      http.singleRequest(HttpRequest(uri = "http://localhost:80/status/" + status.toString))
         .pipeTo(self)
     }
 
@@ -32,12 +44,23 @@ class Payer extends Actor {
         entity.dataBytes.runFold(ByteString(""))(_ ++ _).foreach { body =>
           println("Got response, body: " + body.utf8String)
         }
-        println("Sending Success to pareent: " + context.parent)
         context.parent ! Success
-        // this case below is to be deleted
+      case resp @ HttpResponse(StatusCodes.ServiceUnavailable, _, _, _) =>
+        println("Request failed, response code: 503")
+        resp.discardEntityBytes()
+        throw new PaymentServiceTemporarilyUnavailable()
       case resp @ HttpResponse(code, _, _, _) =>
         println("Request failed, response code: " + code)
         resp.discardEntityBytes()
+        throw new InternalPaymentServiceException()
     }
 
+  private def getStatus =
+    if(Payer.counter < 2)
+      500 // we will fail 3 times for fun
+    else
+      200
+
+  // uncomment for the test called "supervise whole order process and gets error if payment service returns 503"
+  // private def getStatus = 503
 }
