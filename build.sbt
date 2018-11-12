@@ -10,6 +10,8 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-persistence" % "2.5.17",
   "org.iq80.leveldb"            % "leveldb"          % "0.9",
   "org.fusesource.leveldbjni"   % "leveldbjni-all"   % "1.8",
+  "com.typesafe.akka" %% "akka-http"   % "10.1.5",
+  "com.typesafe.akka" %% "akka-stream" % "2.5.12", // or whatever the latest version is
   "org.scalatest" %% "scalatest" % "3.0.1" % "test")
 
 // the library is available in Bintray repository
@@ -20,3 +22,4 @@ libraryDependencies += "com.github.dnvriend" %% "akka-persistence-inmemory" % "2
 
 // akka 2.4.x
 libraryDependencies += "com.github.dnvriend" %% "akka-persistence-inmemory" % "2.4.20.0"
+
